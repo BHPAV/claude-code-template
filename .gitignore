@@ -2,6 +2,12 @@
 .claude/hooks/.session_cache.json
 .claude/hooks/.tool_call_cache.json
 
+# SQLite database (runtime data)
+.claude/hooks/*.db
+
+# Windows artifacts
+.claude/hooks/nul
+
 # Python
 __pycache__/
 *.py[cod]

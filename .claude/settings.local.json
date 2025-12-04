@@ -1,59 +1,113 @@
 {
-    "permissions": {
-      "allow": [
-        "Bash(dir \"D:\\Dev\\AI-Personal\\Claude\" /s /b)",
-        "Bash(find:*)",
-        "Bash(cat:*)",
-        "Bash(python:*)",
-        "Bash(where:*)",
-        "Bash(dir:*)",
-        "WebSearch",
-        "WebFetch(domain:github.com)"
-      ],
-      "deny": [],
-      "ask": []
-    },
-    "hooks": {
-      "UserPromptSubmit": [
-        {
-          "hooks": [
-            {
-              "type": "command",
-              "command": "python .claude/hooks/prompt_hooks.py"
-            }
-          ]
-        }
-      ],
-      "SessionStart": [
-        {
-          "hooks": [
-            {
-              "type": "command",
-              "command": "python .claude/hooks/session_hooks.py start"
-            }
-          ]
-        }
-      ],
-      "SessionEnd": [
-        {
-          "hooks": [
-            {
-              "type": "command",
-              "command": "python .claude/hooks/session_hooks.py end"
-            }
-          ]
-        }
-      ],
-      "PreToolUse": [
-        {
-          "matcher": "*",
-          "hooks": [
-            {
-              "type": "command",
-              "command": "python .claude/hooks/tool_hooks.py"
-            }
-          ]
-        }
-      ]
-    }
+  "permissions": {
+    "allow": [
+      "Bash(dir \"D:\\Dev\\AI-Personal\\Claude\" /s /b)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(python:*)",
+      "Bash(where:*)",
+      "Bash(dir:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:platform.claude.com)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/prompt_hooks.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/sqlite_hooks.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/session_hooks.py start"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/sqlite_hooks.py"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/session_hooks.py end"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/sqlite_hooks.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/tool_hooks.py"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/sqlite_hooks.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/tool_hooks.py"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/sqlite_hooks.py"
+          }
+        ]
+      }
+    ]
   }
+}
