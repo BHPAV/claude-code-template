@@ -1,0 +1,12 @@
+# Cache files
+.claude/hooks/.session_cache.json
+.claude/hooks/.tool_call_cache.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
+.env
+.env.local
