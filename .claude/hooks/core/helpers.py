@@ -1,4 +1,4 @@
-"""Helper functions for SQLite hooks data extraction and analysis."""
+"""Helper functions for hooks data extraction and analysis."""
 
 import hashlib
 import json
@@ -27,10 +27,15 @@ def classify_tool(tool_name: str) -> str:
         tool_name: Name of the tool
 
     Returns:
-        Category string: 'file_ops', 'search', 'bash', 'web', 'task', 'question', 'plan', or 'other'
+        Category string: 'file_ops', 'search', 'bash', 'web', 'task', 'question', 'plan', 'mcp', or 'other'
     """
     if not tool_name:
         return 'other'
+
+    # Detect MCP tools by prefix (e.g., mcp__neo4j__read_neo4j_cypher)
+    if tool_name.startswith('mcp__'):
+        return 'mcp'
+
     for category, tools in TOOL_CATEGORIES.items():
         if tool_name in tools:
             return category
@@ -116,6 +121,21 @@ def extract_url(tool_name: str, tool_input: dict) -> Optional[str]:
     elif tool_name == 'WebSearch':
         return tool_input.get('query')
     return None
+
+
+def extract_subagent_type(tool_name: str, tool_input: dict) -> Optional[str]:
+    """Extract subagent_type from Task tool input.
+
+    Args:
+        tool_name: Name of the tool
+        tool_input: Tool input parameters dict
+
+    Returns:
+        Subagent type if Task tool, None otherwise
+    """
+    if tool_name != 'Task' or not tool_input:
+        return None
+    return tool_input.get('subagent_type')
 
 
 def compute_prompt_hash(prompt_text: str) -> str:

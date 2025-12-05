@@ -8,16 +8,22 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import sys
+
+# Add hooks root to path for imports
+HOOKS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(HOOKS_DIR))
+
 from neo4j import GraphDatabase
 
-from config import load_neo4j_config
-from models import (
+from core.config import load_neo4j_config
+from core.models import (
     CLISessionStartEvent,
     CLISessionEndEvent,
     CLIToolResultEvent,
     CLIPromptEvent,
-    sanitize_tool_input,
 )
+from core.helpers import sanitize_tool_input
 
 
 class CLINeo4jWriter:
@@ -99,12 +105,16 @@ class CLINeo4jWriter:
                     MATCH (s:ClaudeCodeSession {session_id: $session_id})
                     SET s.end_time = datetime($timestamp),
                         s.status = 'completed',
-                        s.total_duration_seconds = $duration
+                        s.total_duration_seconds = $duration,
+                        s.tool_call_count = $tool_count,
+                        s.prompt_count = $prompt_count
                     """),
                     {
                         "session_id": event.session_id,
                         "timestamp": event.timestamp.isoformat(),
                         "duration": event.duration_seconds,
+                        "tool_count": event.tool_count,
+                        "prompt_count": event.prompt_count,
                     },
                 )
             )

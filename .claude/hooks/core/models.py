@@ -1,7 +1,5 @@
 """
 Data models for Claude Code CLI hook events.
-
-Mirrors patterns from self_improving_agent_v3/hooks/monitoring.py
 """
 
 from dataclasses import dataclass, field
@@ -63,15 +61,3 @@ class CLIPromptEvent:
     session_id: str
     prompt_text: str
     timestamp: datetime
-
-
-def sanitize_tool_input(tool_input: dict[str, Any]) -> dict[str, Any]:
-    """Remove sensitive data from tool inputs."""
-    sensitive_keys = ["password", "api_key", "token", "secret", "auth"]
-    sanitized = tool_input.copy()
-
-    for key in list(sanitized.keys()):
-        if any(sensitive in key.lower() for sensitive in sensitive_keys):
-            sanitized[key] = "[REDACTED]"
-
-    return sanitized

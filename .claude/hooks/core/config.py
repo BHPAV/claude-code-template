@@ -1,12 +1,63 @@
 """
-Configuration for Claude Code hooks.
+Unified configuration for Claude Code hooks.
 
-Standalone configuration for hook scripts, independent of agent configuration.
+Combines SQLite and Neo4j configuration in one module.
 """
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
+
+# ============================================================================
+# SQLite Configuration
+# ============================================================================
+
+def get_db_path() -> Path:
+    """Get SQLite database path from environment or default.
+
+    Environment variable: SQLITE_DB_PATH
+
+    Returns:
+        Path to the SQLite database file
+    """
+    default = Path(__file__).parent.parent / "data" / "claude_hooks.db"
+    return Path(os.environ.get("SQLITE_DB_PATH", default))
+
+
+def is_sqlite_available() -> bool:
+    """Check if SQLite database is accessible.
+
+    Creates parent directories if needed.
+
+    Returns:
+        True if database can be connected to, False otherwise
+    """
+    try:
+        import sqlite3
+        path = get_db_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(path))
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def get_log_level() -> str:
+    """Get logging level from environment.
+
+    Environment variable: HOOK_LOG_LEVEL
+
+    Returns:
+        Log level string (default: WARNING)
+    """
+    return os.environ.get("HOOK_LOG_LEVEL", "WARNING")
+
+
+# ============================================================================
+# Neo4j Configuration
+# ============================================================================
 
 @dataclass
 class Neo4jConfig:

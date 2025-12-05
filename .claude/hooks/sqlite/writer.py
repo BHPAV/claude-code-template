@@ -5,13 +5,21 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlite_config import get_db_path
-from sqlite_helpers import (
+import sys
+from pathlib import Path
+
+# Add hooks root to path for imports
+HOOKS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(HOOKS_DIR))
+
+from core.config import get_db_path
+from core.helpers import (
     classify_tool,
     extract_file_path,
     extract_command,
     extract_pattern,
     extract_url,
+    extract_subagent_type,
     compute_prompt_hash,
     count_words,
     detect_success,
@@ -25,7 +33,7 @@ from sqlite_helpers import (
 class CLISqliteWriter:
     """Context manager for writing hook events to SQLite with field extraction."""
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 4  # Bumped for subagent_type column
 
     def __init__(self):
         self.db_path = get_db_path()
@@ -56,13 +64,17 @@ class CLISqliteWriter:
 
             if 'tool_use_id' not in columns:
                 self._migrate_schema_v1_to_v2(cursor)
+            if 'synced_to_neo4j' not in columns:
+                self._migrate_schema_v2_to_v3(cursor)
+            if 'subagent_type' not in columns:
+                self._migrate_schema_v3_to_v4(cursor)
         else:
-            self._create_schema_v2(cursor)
+            self._create_schema_v4(cursor)
 
         self.conn.commit()
 
-    def _create_schema_v2(self, cursor):
-        """Create the enhanced schema (v2)."""
+    def _create_schema_v4(self, cursor):
+        """Create the enhanced schema (v4) with subagent_type tracking."""
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +94,7 @@ class CLISqliteWriter:
                 tool_use_id TEXT,
                 tool_name TEXT,
                 tool_category TEXT,
+                subagent_type TEXT,
 
                 file_path TEXT,
                 command TEXT,
@@ -100,7 +113,9 @@ class CLISqliteWriter:
                 prompt_text TEXT,
                 prompt_hash TEXT,
                 prompt_length INTEGER,
-                prompt_word_count INTEGER
+                prompt_word_count INTEGER,
+
+                synced_to_neo4j INTEGER DEFAULT 0
             )
         """)
 
@@ -190,6 +205,32 @@ class CLISqliteWriter:
         # Backfill existing data
         self._backfill_existing_data(cursor)
 
+    def _migrate_schema_v2_to_v3(self, cursor):
+        """Migrate from v2 to v3 - add synced_to_neo4j column."""
+        try:
+            cursor.execute("ALTER TABLE events ADD COLUMN synced_to_neo4j INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Create index for sync queries
+        try:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_synced ON events(synced_to_neo4j)")
+        except sqlite3.OperationalError:
+            pass
+
+    def _migrate_schema_v3_to_v4(self, cursor):
+        """Migrate from v3 to v4 - add subagent_type column."""
+        try:
+            cursor.execute("ALTER TABLE events ADD COLUMN subagent_type TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Create index for subagent_type queries
+        try:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_subagent_type ON events(subagent_type)")
+        except sqlite3.OperationalError:
+            pass
+
     def _create_indexes(self, cursor):
         """Create all indexes for efficient querying."""
         indexes = [
@@ -204,6 +245,8 @@ class CLISqliteWriter:
             ('idx_events_prompt_hash', 'events(prompt_hash)'),
             ('idx_events_session_type', 'events(session_id, event_type)'),
             ('idx_events_session_timestamp', 'events(session_id, timestamp)'),
+            ('idx_events_synced', 'events(synced_to_neo4j)'),
+            ('idx_events_subagent_type', 'events(subagent_type)'),
         ]
 
         for idx_name, idx_def in indexes:
@@ -251,6 +294,7 @@ class CLISqliteWriter:
             updates['tool_name'] = tool_name
             if tool_name:
                 updates['tool_category'] = classify_tool(tool_name)
+                updates['subagent_type'] = extract_subagent_type(tool_name, tool_input)
                 updates['file_path'] = normalize_path(extract_file_path(tool_name, tool_input))
                 updates['command'] = extract_command(tool_name, tool_input)
                 updates['pattern'] = extract_pattern(tool_name, tool_input)
@@ -395,6 +439,7 @@ class CLISqliteWriter:
             'git_branch': env.get('git_branch'),
             'platform': env.get('platform'),
             'python_version': env.get('python_version'),
+            'synced_to_neo4j': 0,
         }
 
         # Event-specific extraction
@@ -433,6 +478,7 @@ class CLISqliteWriter:
             'tool_use_id': tool_use_id,
             'tool_name': tool_name,
             'tool_category': classify_tool(tool_name) if tool_name else None,
+            'subagent_type': extract_subagent_type(tool_name, tool_input) if tool_name else None,
             'file_path': normalize_path(extract_file_path(tool_name, tool_input)) if tool_name else None,
             'command': extract_command(tool_name, tool_input) if tool_name else None,
             'pattern': extract_pattern(tool_name, tool_input) if tool_name else None,
@@ -466,6 +512,7 @@ class CLISqliteWriter:
             'tool_use_id': tool_use_id,
             'tool_name': tool_name,
             'tool_category': classify_tool(tool_name) if tool_name else None,
+            'subagent_type': extract_subagent_type(tool_name, tool_input) if tool_name else None,
             'file_path': normalize_path(extract_file_path(tool_name, tool_input)) if tool_name else None,
             'command': extract_command(tool_name, tool_input) if tool_name else None,
             'pattern': extract_pattern(tool_name, tool_input) if tool_name else None,
