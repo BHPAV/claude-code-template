@@ -11,11 +11,12 @@ This is a standalone Claude Code hooks system called "Claudius" that captures an
 ### Hook System Design
 
 The system uses Claude Code's hook mechanism to intercept events:
-- **UserPromptSubmit**: Captures user prompts via `prompt_hooks.py`
-- **SessionStart/SessionEnd**: Tracks session lifecycle via `session_hooks.py`
-- **PreToolUse/PostToolUse**: Logs tool calls and results via `tool_hooks.py`
+- **UserPromptSubmit**: Captures user prompts via `prompt_hook.py`
+- **SessionStart/SessionEnd**: Tracks session lifecycle via `session_hook.py`
+- **PreToolUse/PostToolUse**: Logs tool calls and results via `tool_hook.py`
+- **SubagentStop**: Captures tool calls made BY subagents via `subagent_stop_hook.py`
 
-All hooks are Python scripts that read JSON from stdin and write to Neo4j synchronously.
+All hooks are Python scripts that read JSON from stdin and write to SQLite, with Neo4j sync on SessionEnd.
 
 ### Key Components
 
@@ -59,14 +60,25 @@ All hooks are Python scripts that read JSON from stdin and write to Neo4j synchr
 **Nodes:**
 - `ClaudeCodeSession`: Session metadata with counters
 - `CLIPrompt`: User prompts with text and hash
-- `CLIToolCall`: Tool invocations with timing, inputs/outputs
+- `CLIToolCall`: Tool invocations with timing, inputs/outputs (includes subagent tools with `is_subagent_tool: true`)
 - `CLIMetrics`: Aggregated session statistics
+- `SubagentSession`: Subagent session metadata with parent linkage
 - `File`: (External) File nodes from repository mapping
 
 **Relationships:**
 - `PART_OF_SESSION`: Links prompts/tools to sessions
 - `ACCESSED_FILE`: Links tools to files they operated on
 - `SUMMARIZES`: Links metrics to sessions
+- `CHILD_OF_SESSION`: Links SubagentSession to parent ClaudeCodeSession
+- `TRIGGERED_SUBAGENT`: Links Task tool call to SubagentSession it spawned
+- `PART_OF_SUBAGENT`: Links subagent tool calls to their SubagentSession
+
+### SQLite Schema (v5)
+
+Key columns in `events` table for subagent tracking:
+- `parent_session_id`: Links subagent events to parent session
+- `agent_id`: The subagent's session ID
+- `is_subagent_event`: Boolean flag (1 for subagent tool calls)
 
 ### Error Handling Philosophy
 
@@ -108,13 +120,16 @@ Test individual hooks directly:
 
 ```bash
 # Test prompt hook
-echo '{"sessionId": "test-123", "prompt": "test"}' | python .claude/hooks/prompt_hooks.py
+echo '{"sessionId": "test-123", "prompt": "test"}' | python .claude/hooks/entrypoints/prompt_hook.py
 
 # Test session start
-echo '{"event": "SessionStart", "sessionId": "test-123"}' | python .claude/hooks/session_hooks.py
+echo '{"event": "SessionStart", "sessionId": "test-123"}' | python .claude/hooks/entrypoints/session_hook.py
 
 # Test tool hook
-echo '{"event": "PostToolUse", "sessionId": "test-123", "toolName": "Read", "toolInput": {}, "toolOutput": "success"}' | python .claude/hooks/tool_hooks.py
+echo '{"event": "PostToolUse", "sessionId": "test-123", "toolName": "Read", "toolInput": {}, "toolOutput": "success"}' | python .claude/hooks/entrypoints/tool_hook.py
+
+# Test subagent stop hook (requires valid transcript_path)
+echo '{"sessionId": "test-123", "transcript_path": "/path/to/transcript.jsonl"}' | python .claude/hooks/entrypoints/subagent_stop_hook.py
 ```
 
 ## Development Notes
@@ -162,4 +177,80 @@ ORDER BY uses DESC;
 USE claude_hooks
 MATCH (t:CLIToolCall {success: false})-[:PART_OF_SESSION]->(s:ClaudeCodeSession)
 RETURN DISTINCT s.session_id, collect(t.tool_name) as failed_tools;
+
+// Subagent activity for a session
+USE claude_hooks
+MATCH (sub:SubagentSession)-[:CHILD_OF_SESSION]->(s:ClaudeCodeSession {session_id: $session_id})
+RETURN sub.agent_id, sub.subagent_type, sub.tool_count;
+
+// All tool calls made by subagents
+USE claude_hooks
+MATCH (t:CLIToolCall {is_subagent_tool: true})-[:PART_OF_SUBAGENT]->(sub:SubagentSession)
+RETURN sub.subagent_type, t.tool_name, count(*) as uses
+ORDER BY uses DESC;
+
+// Sessions by machine
+USE claudehooks
+MATCH (s:ClaudeCodeSession)-[:RAN_ON]->(m:Machine)
+RETURN m.machine_id, count(s) as sessions
+ORDER BY sessions DESC;
 ```
+
+## Machine Context
+
+This session runs on a homelab machine. Machine detection is automatic via:
+1. `MACHINE_ID` environment variable (explicit override)
+2. Hostname pattern matching
+3. IP address matching against inventory
+4. GPU detection (RTX 5090 = box-rig, RTX 4090 = box-rex)
+
+### Get Current Machine Context
+
+```python
+from domo.domo_env import DomoEnv
+
+env = DomoEnv()
+print(f"Machine: {env.machine_id}")
+print(f"Role: {env.machine_info.role}")
+print(f"Detection: {env.machine_info.detection_method}")
+
+# Get machine-specific prompt
+print(env.get_machine_prompt())
+
+# Get environment spec (full/medium/minimal)
+print(env.get_spec('medium'))
+
+# Get combined context
+print(env.get_full_context('medium'))
+```
+
+### CLI Usage
+
+```bash
+# Print context at medium compression
+python domo/inject_context.py
+
+# Print full context
+python domo/inject_context.py --level full
+
+# Print minimal context
+python domo/inject_context.py --level minimal
+
+# Output as JSON
+python domo/inject_context.py --json
+```
+
+### Available Machines
+
+| Machine ID        | Role               | VLAN  | GPU/Specs        |
+|-------------------|--------------------|-------|------------------|
+| box-rig           | GPU Workstation    | 30    | RTX 5090 (32GB)  |
+| box-rex           | GPU Workstation    | 30    | RTX 4090 (24GB)  |
+| terramaster-nas   | NAS/Docker Host    | 10,20 | i3-N305, 32GB    |
+| macbook-pro       | Mobile Workstation | 30    | Apple Silicon    |
+| ugv-rover-jetson  | Robotics Platform  | 50    | Jetson Orin      |
+| lab-pc            | Lab Base Station   | 50    | Raspberry Pi 5   |
+
+### Neo4j Database Note
+
+The CLI hooks now write to the `claudehooks` database (not `claude_hooks` - Neo4j doesn't allow underscores in database names). Sessions are linked to Machine nodes via `RAN_ON` relationships.

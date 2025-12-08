@@ -66,7 +66,7 @@ class Neo4jConfig:
     uri: str = field(default_factory=lambda: os.getenv("NEO4J_URI", "bolt://localhost:7687"))
     user: str = field(default_factory=lambda: os.getenv("NEO4J_USER", "neo4j"))
     password: str = field(default_factory=lambda: os.getenv("NEO4J_PASSWORD", "password"))
-    database: str = field(default_factory=lambda: os.getenv("NEO4J_DATABASE", "neo4j"))
+    database: str = field(default_factory=lambda: os.getenv("NEO4J_DATABASE", "claudehooks"))
 
     # Connection pool settings
     max_connection_pool_size: int = 50
@@ -82,7 +82,7 @@ def load_neo4j_config() -> Neo4jConfig:
     - NEO4J_URI (default: bolt://localhost:7687)
     - NEO4J_USER (default: neo4j)
     - NEO4J_PASSWORD (default: password)
-    - NEO4J_DATABASE (default: neo4j)
+    - NEO4J_DATABASE (default: claudehooks)
 
     Returns:
         Neo4jConfig: Configuration object with connection settings

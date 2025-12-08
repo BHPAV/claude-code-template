@@ -71,6 +71,16 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/entrypoints/subagent_stop_hook.py"
+          }
+        ]
+      }
     ]
   }
 }
