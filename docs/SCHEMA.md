@@ -292,11 +292,31 @@ Captures project-level understanding.
 | `RESOLVED_BY` | CLIErrorInstance | CLISolution | `resolution_time_ms`, `confidence` | Error solved by |
 | `RESOLVED_IN` | CLIErrorInstance | CLIToolCall | `steps_to_resolution` | Error fixed in tool |
 
+### UnifiedFile Node (File Access Tracking)
+
+Represents a file accessed during Claude Code sessions, consolidating file access data.
+
+| Property | Type | Indexed | Description |
+|----------|------|---------|-------------|
+| `id` | STRING | Yes (unique) | `"unified_file:{path}"` |
+| `path` | STRING | Yes | Normalized Unix-style file path |
+| `name` | STRING | No | File name extracted from path |
+| `extension` | STRING | Yes | File extension (lowercase) |
+| `read_count` | INTEGER | No | Times file was read |
+| `write_count` | INTEGER | No | Times file was written |
+| `modify_count` | INTEGER | No | Times file was modified |
+| `first_accessed` | DATETIME | No | First access timestamp |
+| `last_accessed` | DATETIME | No | Most recent access timestamp |
+
 ### File Relationships
 
 | Relationship | From | To | Properties | Description |
 |--------------|------|-----|------------|-------------|
-| `ACCESSED_FILE` | CLIToolCall | File | - | Tool accessed file |
+| `ACCESSED_FILE` | CLIToolCall | UnifiedFile | `access_mode`, `is_primary`, `is_glob_expansion` | Tool accessed file |
+| `ACCESSED_UNIFIED_FILE` | CLIToolCall | UnifiedFile | - | Tool accessed unified file |
+| `SESSION_ACCESSED` | ClaudeCodeSession | UnifiedFile | `read_count`, `write_count`, `first_access`, `last_access` | Session accessed file |
+| `CO_ACCESSED_WITH` | UnifiedFile | UnifiedFile | `co_access_count`, `session_count` | Files accessed together |
+| `MERGED_FROM` | UnifiedFile | FileNode | - | Links to external FileNode |
 | `USES_PATTERN` | CLIToolCall | CLICodePattern | `match_confidence` | Tool used pattern |
 
 ### Concept Relationships
@@ -325,6 +345,7 @@ CREATE CONSTRAINT cli_capability_id IF NOT EXISTS FOR (c:CLIToolCapability) REQU
 CREATE CONSTRAINT cli_pattern_id IF NOT EXISTS FOR (p:CLICodePattern) REQUIRE p.id IS UNIQUE;
 CREATE CONSTRAINT cli_concept_id IF NOT EXISTS FOR (c:CLIConcept) REQUIRE c.id IS UNIQUE;
 CREATE CONSTRAINT cli_project_id IF NOT EXISTS FOR (p:CLIProjectContext) REQUIRE p.id IS UNIQUE;
+CREATE CONSTRAINT unified_file_path IF NOT EXISTS FOR (f:UnifiedFile) REQUIRE f.path IS UNIQUE;
 ```
 
 ### Performance Indexes
@@ -509,4 +530,157 @@ User Prompt → CLIPrompt node
                          └── Failure → CLIErrorInstance created
                                               │
                                               └── Resolution → CLISolution created/linked
+```
+
+---
+
+## Infrastructure Nodes (homelab database)
+
+These nodes are stored in the `homelab` database and represent physical infrastructure.
+
+### Machine
+Represents a physical or virtual machine in the homelab.
+
+| Property | Type | Indexed | Description |
+|----------|------|---------|-------------|
+| `machine_id` | STRING | Yes (unique) | Machine identifier (e.g., `"terramaster-nas"`) |
+| `hostname` | STRING | No | Network hostname |
+| `ip_address` | STRING | Yes | Primary IP address |
+| `os` | STRING | No | Operating system version |
+| `os_family` | STRING | No | OS family (e.g., `"TOS"`, `"Linux"`) |
+| `role` | STRING | Yes | Machine role (e.g., `"NAS/Docker Host"`) |
+| `cpu` | STRING | No | CPU model |
+| `ram_gb` | INTEGER | No | RAM in gigabytes |
+| `total_storage_tb` | FLOAT | No | Total storage in terabytes |
+| `filesystem` | STRING | No | Primary filesystem type |
+| `timezone` | STRING | No | System timezone |
+| `created_at` | DATETIME | No | Node creation timestamp |
+| `updated_at` | DATETIME | No | Last update timestamp |
+
+### DockerStack
+Groups related Docker services into deployment stacks.
+
+| Property | Type | Indexed | Description |
+|----------|------|---------|-------------|
+| `stack_id` | STRING | Yes (unique) | Stack identifier (e.g., `"media-stack"`) |
+| `name` | STRING | Yes | Stack name |
+| `compose_file` | STRING | No | Docker compose filename |
+| `category` | STRING | Yes | Stack category (e.g., `"media"`, `"monitoring"`) |
+| `description` | STRING | No | Stack purpose description |
+| `machine_id` | STRING | Yes | Parent machine ID |
+| `created_at` | DATETIME | No | Node creation timestamp |
+| `updated_at` | DATETIME | No | Last update timestamp |
+
+### DockerService
+Represents a Docker container/service.
+
+| Property | Type | Indexed | Description |
+|----------|------|---------|-------------|
+| `service_id` | STRING | Yes (unique) | Service identifier (e.g., `"jellyfin"`) |
+| `name` | STRING | Yes | Container name |
+| `image` | STRING | No | Docker image with tag |
+| `port` | INTEGER | Yes | Primary exposed port (nullable) |
+| `status` | STRING | Yes | Container status (`"running"`, `"stopped"`) |
+| `purpose` | STRING | No | Service purpose description |
+| `category` | STRING | Yes | Service category |
+| `stack_id` | STRING | Yes | Parent stack ID |
+| `machine_id` | STRING | Yes | Host machine ID |
+| `created_at` | DATETIME | No | Node creation timestamp |
+| `updated_at` | DATETIME | No | Last update timestamp |
+
+### StorageVolume
+Represents a storage path/volume on a machine.
+
+| Property | Type | Indexed | Description |
+|----------|------|---------|-------------|
+| `volume_id` | STRING | Yes (unique) | Volume identifier |
+| `path` | STRING | Yes | Filesystem path |
+| `purpose` | STRING | No | Volume purpose |
+| `category` | STRING | Yes | Volume category |
+| `filesystem` | STRING | No | Filesystem type |
+| `machine_id` | STRING | Yes | Host machine ID |
+| `created_at` | DATETIME | No | Node creation timestamp |
+| `updated_at` | DATETIME | No | Last update timestamp |
+
+### DockerNetwork
+Represents a Docker network.
+
+| Property | Type | Indexed | Description |
+|----------|------|---------|-------------|
+| `network_id` | STRING | Yes (unique) | Network identifier |
+| `name` | STRING | Yes | Network name |
+| `driver` | STRING | No | Network driver (e.g., `"bridge"`) |
+| `purpose` | STRING | No | Network purpose |
+| `machine_id` | STRING | Yes | Host machine ID |
+| `created_at` | DATETIME | No | Node creation timestamp |
+| `updated_at` | DATETIME | No | Last update timestamp |
+
+---
+
+## Infrastructure Relationships
+
+| Relationship | From | To | Description |
+|--------------|------|-----|-------------|
+| `RUNS_ON` | DockerService | Machine | Service runs on machine |
+| `DEPLOYED_ON` | DockerStack | Machine | Stack deployed on machine |
+| `MOUNTED_ON` | StorageVolume | Machine | Volume mounted on machine |
+| `DEFINED_ON` | DockerNetwork | Machine | Network defined on machine |
+| `PART_OF_STACK` | DockerService | DockerStack | Service belongs to stack |
+| `CONNECTED_TO` | DockerService | DockerNetwork | Service connected to network |
+| `READS_FROM` | DockerService | StorageVolume | Service reads from volume |
+| `WRITES_TO` | DockerService | StorageVolume | Service writes to volume |
+| `DEPENDS_ON` | DockerService | DockerService | Service dependency |
+| `ROUTES_THROUGH` | DockerService | DockerService | Traffic routing (e.g., VPN) |
+| `MONITORS` | DockerService | DockerService | Monitoring relationship |
+| `INDEXES_FOR` | DockerService | DockerService | Indexer relationship |
+| `SENDS_TO` | DockerService | DockerService | Data flow |
+| `USES_DATABASE` | DockerService | DockerService | Database dependency |
+| `USES_CACHE` | DockerService | DockerService | Cache dependency |
+| `RAN_ON` | ClaudeCodeSession | Machine | Session ran on machine |
+
+---
+
+## Infrastructure Schema Diagram
+
+```
+                        ┌─────────────────────┐
+                        │      Machine        │
+                        │  ─────────────────  │
+                        │  machine_id         │
+                        │  hostname           │
+                        │  ip_address         │
+                        │  role               │
+                        └─────────┬───────────┘
+                                  │
+          ┌───────────┬───────────┼───────────┬───────────┐
+          │           │           │           │           │
+    DEPLOYED_ON   RUNS_ON    MOUNTED_ON   DEFINED_ON   RAN_ON
+          │           │           │           │           │
+          ▼           │           ▼           ▼           ▼
+┌─────────────────┐   │   ┌─────────────┐ ┌──────────┐ ┌──────────────┐
+│  DockerStack    │   │   │StorageVolume│ │DockerNet │ │ClaudeCodeSes │
+│  ─────────────  │   │   │ ──────────  │ │ ──────── │ │  ──────────  │
+│  name           │   │   │ path        │ │ name     │ │  session_id  │
+│  compose_file   │   │   │ purpose     │ │ driver   │ │  working_dir │
+└────────┬────────┘   │   └──────▲──────┘ └──────────┘ └──────────────┘
+         │            │          │
+  PART_OF_STACK       │    READS_FROM / WRITES_TO
+         │            │          │
+         ▼            ▼          │
+     ┌─────────────────────────────────────┐
+     │          DockerService              │
+     │          ─────────────              │
+     │          name, image, port          │
+     │          status, purpose            │
+     └──────────────┬──────────────────────┘
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+     DEPENDS_ON          MONITORS
+          │                   │
+          ▼                   ▼
+   ┌─────────────┐    ┌─────────────┐
+   │DockerService│    │DockerService│
+   │  (another)  │    │  (target)   │
+   └─────────────┘    └─────────────┘
 ```

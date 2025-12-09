@@ -12,14 +12,32 @@ This directory contains a complete, self-contained hooks system for Claude Code 
 
 All data is stored in a Neo4j graph database for analysis and visualization.
 
-## Files
+## Directory Structure
 
-- **config.py** - Standalone Neo4j configuration (no external dependencies)
-- **models.py** - Data models for hook events
-- **neo4j_writer.py** - Neo4j write operations with database selection support
-- **prompt_hooks.py** - UserPromptSubmit hook handler
-- **session_hooks.py** - SessionStart/SessionEnd hook handlers
-- **tool_hooks.py** - PreToolUse/PostToolUse hook handlers
+```
+.claude/hooks/
+├── core/
+│   ├── config.py         # SQLite & Neo4j configuration
+│   ├── models.py         # Data models (dataclasses)
+│   └── helpers.py        # File path extraction, classification utils
+├── sqlite/
+│   ├── reader.py         # SQLite query operations
+│   └── writer.py         # SQLite write operations (schema v7)
+├── graph/
+│   ├── writer.py         # Neo4j write operations
+│   └── sync.py           # SQLite → Neo4j sync orchestration
+├── entrypoints/
+│   ├── prompt_hook.py    # UserPromptSubmit handler
+│   ├── session_hook.py   # SessionStart/SessionEnd handlers
+│   ├── tool_hook.py      # PreToolUse/PostToolUse handlers
+│   └── subagent_stop_hook.py  # SubagentStop handler
+├── tests/                # Pytest test suite (224 tests)
+│   ├── conftest.py
+│   ├── test_*.py
+│   └── pytest.ini
+└── data/
+    └── claude_hooks.db   # SQLite database
+```
 
 ## Configuration
 
@@ -93,17 +111,50 @@ The hooks are already configured in `.claude/settings.local.json`. Ensure:
 
 ## Testing
 
+### Automated Test Suite
+
+The hooks system includes a comprehensive pytest test suite with 224 tests.
+
+**Run all tests:**
+```bash
+python -m pytest tests/ -v
+```
+
+**Test categories:**
+```bash
+# Unit tests (fast, no external dependencies)
+python -m pytest tests/ -v -m unit
+
+# Integration tests (SQLite/Neo4j mocked)
+python -m pytest tests/ -v -m integration
+
+# End-to-end tests (full hook flows)
+python -m pytest tests/ -v -m e2e
+```
+
+**Test files:**
+- `tests/conftest.py` - Shared fixtures (temp databases, mocks)
+- `tests/test_helpers.py` - File path extraction functions (40+ tests)
+- `tests/test_models.py` - Data model validation
+- `tests/test_sqlite_writer.py` - SQLite schema and writes
+- `tests/test_sqlite_reader.py` - SQLite query methods
+- `tests/test_neo4j_writer.py` - Neo4j operations (mocked)
+- `tests/test_sync.py` - Sync orchestration
+- `tests/test_integration.py` - E2E hook processing
+
+### Manual Hook Testing
+
 Test individual hooks:
 
 ```bash
 # Test prompt hook
-echo '{"sessionId": "test-123", "prompt": "test"}' | python prompt_hooks.py
+echo '{"sessionId": "test-123", "prompt": "test"}' | python entrypoints/prompt_hook.py
 
 # Test session start
-echo '{"event": "SessionStart", "sessionId": "test-123"}' | python session_hooks.py
+echo '{"event": "SessionStart", "sessionId": "test-123"}' | python entrypoints/session_hook.py
 
 # Test tool hook
-echo '{"event": "PostToolUse", "sessionId": "test-123", "toolName": "Read", "toolInput": {}, "toolOutput": "success"}' | python tool_hooks.py
+echo '{"event": "PostToolUse", "sessionId": "test-123", "toolName": "Read", "toolInput": {}, "toolOutput": "success"}' | python entrypoints/tool_hook.py
 ```
 
 ## Error Handling
