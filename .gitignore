@@ -3,9 +3,12 @@
 .claude/hooks/.tool_call_cache.json
 
 # SQLite database (runtime data)
+*.db
 .claude/hooks/*.db
+.claude/hooks/data/*.db
 
 # Windows artifacts
+nul
 .claude/hooks/nul
 
 # Python

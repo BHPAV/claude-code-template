@@ -9,7 +9,12 @@
       "Bash(dir:*)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:platform.claude.com)"
+      "WebFetch(domain:platform.claude.com)",
+      "Bash(git checkout:*)",
+      "Bash(findstr:*)",
+      "Bash(tree:*)",
+      "mcp__neo4j__get_neo4j_schema",
+      "mcp__neo4j__read_neo4j_cypher"
     ],
     "deny": [],
     "ask": []
@@ -20,15 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/prompt_hooks.py"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/sqlite_hooks.py"
+            "command": "python .claude/hooks/entrypoints/prompt_hook.py"
           }
         ]
       }
@@ -38,15 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/session_hooks.py start"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/sqlite_hooks.py"
+            "command": "python .claude/hooks/entrypoints/session_hook.py"
           }
         ]
       }
@@ -56,15 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/session_hooks.py end"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/sqlite_hooks.py"
+            "command": "python .claude/hooks/entrypoints/session_hook.py"
           }
         ]
       }
@@ -75,16 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/tool_hooks.py"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/sqlite_hooks.py"
+            "command": "python .claude/hooks/entrypoints/tool_hook.py"
           }
         ]
       }
@@ -95,16 +67,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/tool_hooks.py"
+            "command": "python .claude/hooks/entrypoints/tool_hook.py"
           }
         ]
-      },
+      }
+    ],
+    "SubagentStop": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/sqlite_hooks.py"
+            "command": "python .claude/hooks/entrypoints/subagent_stop_hook.py"
           }
         ]
       }
