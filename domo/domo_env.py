@@ -38,39 +38,57 @@ MACHINE_INVENTORY = {
     "terramaster-nas": {
         "hostnames": ["terramaster", "nas", "f4-424", "box-nas"],
         "ips": ["192.168.1.20", "192.168.10.10", "192.168.20.10"],
+        "tailscale_name": "terramaster-nas",
+        "tailscale_ip": "100.74.45.35",
+        "ssh_user": "boxhead",
         "role": "NAS/Docker Host",
+        "os": "linux",
         "vlan": [10, 20],
     },
     "box-rig": {
         "hostnames": ["box-rig", "boxrig"],
         "ips": ["192.168.30.10"],
+        "tailscale_name": "box-rig",
+        "tailscale_ip": "100.120.211.28",
+        "ssh_user": "boxhead",
         "role": "GPU Workstation",
+        "os": "windows",
         "gpu": "RTX 5090",
         "vlan": [30],
     },
     "box-rex": {
         "hostnames": ["box-rex", "boxrex"],
         "ips": ["192.168.30.11"],
+        "tailscale_name": "box-rex",
+        "tailscale_ip": "100.98.133.117",
+        "ssh_user": "boxhead",
         "role": "GPU Workstation",
+        "os": "windows",
         "gpu": "RTX 4090",
         "vlan": [30],
     },
     "macbook-pro": {
         "hostnames": ["macbook", "mbp"],
         "ips": [],  # DHCP
+        "tailscale_name": "box-mac-1",
+        "tailscale_ip": "100.69.182.91",
+        "ssh_user": "boxhead",
         "role": "Mobile Workstation",
+        "os": "macos",
         "vlan": [30],
     },
     "ugv-rover-jetson": {
         "hostnames": ["jetson", "ugv", "rover", "orin"],
         "ips": ["192.168.50.10"],
         "role": "Robotics Platform",
+        "os": "linux",
         "vlan": [50],
     },
     "lab-pc": {
         "hostnames": ["lab-pc", "labpc", "pi5"],
         "ips": ["192.168.50.20"],
         "role": "Lab Base Station",
+        "os": "linux",
         "vlan": [50],
     },
 }
@@ -501,6 +519,77 @@ class DomoEnv:
 
         return results
 
+    def get_tailscale_ssh(self):
+        """Get TailscaleSSH instance for SSH operations."""
+        try:
+            from .ssh import TailscaleSSH
+        except ImportError:
+            # When running as script, use path-based import
+            import sys
+            from pathlib import Path
+            ssh_path = Path(__file__).parent / "ssh"
+            if str(ssh_path.parent) not in sys.path:
+                sys.path.insert(0, str(ssh_path.parent))
+            from ssh.tailscale import TailscaleSSH
+        return TailscaleSSH()
+
+    def get_tailscale_status(self) -> dict:
+        """Get Tailscale network status as dict."""
+        ssh = self.get_tailscale_ssh()
+        status = ssh.get_status()
+        return {
+            "self_name": status.self_name,
+            "self_ip": status.self_ip,
+            "machines": {
+                mid: {
+                    "online": m.online,
+                    "tailscale_ip": m.tailscale_ip,
+                    "ssh_user": m.ssh_user,
+                    "os": m.os,
+                    "connection_state": m.connection_state,
+                }
+                for mid, m in status.machines.items()
+            }
+        }
+
+    def is_machine_online(self, machine_id: str) -> bool:
+        """Check if a machine is online via Tailscale."""
+        ssh = self.get_tailscale_ssh()
+        return ssh.is_online(machine_id)
+
+    def ssh_run(self, machine_id: str, command: str, timeout: int = 60) -> tuple[str, str, int]:
+        """
+        Run a command on a remote machine via Tailscale SSH.
+
+        Args:
+            machine_id: Target machine ID (box-rig, box-rex, box-mac, terramaster-nas)
+            command: Command to execute
+            timeout: Timeout in seconds
+
+        Returns:
+            Tuple of (stdout, stderr, return_code)
+        """
+        ssh = self.get_tailscale_ssh()
+        return ssh.run_command(machine_id, command, timeout=timeout)
+
+    def ssh_connect(self, machine_id: str) -> int:
+        """
+        Open an interactive SSH session to a machine.
+
+        Args:
+            machine_id: Target machine ID
+
+        Returns:
+            Exit code from SSH session
+        """
+        ssh = self.get_tailscale_ssh()
+        return ssh.connect(machine_id)
+
+    def test_ssh_connections(self) -> dict[str, tuple[bool, str]]:
+        """Test SSH connections to all Tailscale machines."""
+        ssh = self.get_tailscale_ssh()
+        return ssh.test_all_connections()
+
     def close(self):
         """Close all connections."""
         if self._neo4j_driver:
@@ -578,6 +667,58 @@ def cmd_list_agents(env: DomoEnv, args):
         print(f"{row['instance_id']:<40} {row['agent_type']:<15} {row['machine_id']:<15} {row['status']:<10} {row['last_seen_at']}")
 
 
+def cmd_ssh_status(env: DomoEnv, args):
+    """Show Tailscale SSH machine status."""
+    ssh = env.get_tailscale_ssh()
+    status = ssh.get_status()
+
+    print(f"Self: {status.self_name} ({status.self_ip})")
+    print()
+    print(f"{'Machine':<18} {'Status':<12} {'IP':<18} {'OS':<10} {'User'}")
+    print("-" * 75)
+
+    for machine_id, machine in status.machines.items():
+        status_str = "ONLINE" if machine.online else "offline"
+        print(f"{machine_id:<18} {status_str:<12} {machine.tailscale_ip:<18} {machine.os:<10} {machine.ssh_user}")
+
+
+def cmd_ssh(env: DomoEnv, args):
+    """SSH to a machine or run a command."""
+    if args.command:
+        # Run command
+        stdout, stderr, rc = env.ssh_run(args.machine, args.command, timeout=args.timeout)
+        if stdout:
+            print(stdout, end="")
+        if stderr:
+            print(stderr, end="", file=sys.stderr)
+        sys.exit(rc)
+    else:
+        # Interactive session
+        rc = env.ssh_connect(args.machine)
+        sys.exit(rc)
+
+
+def cmd_ssh_test(env: DomoEnv, args):
+    """Test SSH connections."""
+    ssh = env.get_tailscale_ssh()
+
+    if args.machine:
+        # Test single machine
+        success, msg = ssh.test_connection(args.machine)
+        print(f"{args.machine}: {'OK' if success else 'FAIL'} - {msg}")
+        sys.exit(0 if success else 1)
+    else:
+        # Test all machines
+        results = ssh.test_all_connections()
+        all_ok = True
+        for machine_id, (success, msg) in results.items():
+            status = "OK" if success else "FAIL"
+            print(f"{machine_id}: {status} - {msg}")
+            if not success:
+                all_ok = False
+        sys.exit(0 if all_ok else 1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Homelab environment helper",
@@ -598,6 +739,19 @@ def main():
     # list-agents
     subparsers.add_parser("list-agents", help="List registered agents")
 
+    # ssh-status
+    subparsers.add_parser("ssh-status", help="Show Tailscale SSH machine status")
+
+    # ssh
+    ssh_parser = subparsers.add_parser("ssh", help="SSH to a machine")
+    ssh_parser.add_argument("machine", help="Machine ID (box-rig, box-rex, box-mac, nas)")
+    ssh_parser.add_argument("command", nargs="?", help="Command to run (optional)")
+    ssh_parser.add_argument("--timeout", type=int, default=60, help="Timeout in seconds")
+
+    # ssh-test
+    ssh_test_parser = subparsers.add_parser("ssh-test", help="Test SSH connections")
+    ssh_test_parser.add_argument("machine", nargs="?", help="Machine ID (optional, tests all if omitted)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -613,6 +767,12 @@ def main():
             cmd_register_agent(env, args)
         elif args.command == "list-agents":
             cmd_list_agents(env, args)
+        elif args.command == "ssh-status":
+            cmd_ssh_status(env, args)
+        elif args.command == "ssh":
+            cmd_ssh(env, args)
+        elif args.command == "ssh-test":
+            cmd_ssh_test(env, args)
 
 
 if __name__ == "__main__":

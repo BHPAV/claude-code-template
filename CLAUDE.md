@@ -160,6 +160,88 @@ scp terramaster:/srv/projects/file.txt ./
 - Sonarr (8989), Radarr (7878), qBittorrent (8080)
 - Code-Server (8443), Immich (2283)
 
+### Tailscale SSH Access
+
+The homelab uses Tailscale SSH for secure, key-free authentication between machines.
+
+**Available Machines:**
+| Machine | Tailscale Name | IP | OS |
+|---------|---------------|-----|-----|
+| box-rig | box-rig | 100.120.211.28 | Windows |
+| box-rex | box-rex | 100.98.133.117 | Windows |
+| box-mac | box-mac-1 | 100.69.182.91 | macOS |
+| terramaster-nas | terramaster-nas | 100.74.45.35 | Linux |
+
+**Direct Connection (Tailscale CLI):**
+```bash
+# Interactive session
+tailscale ssh boxhead@box-rig
+tailscale ssh boxhead@box-rex
+tailscale ssh boxhead@box-mac-1
+
+# Run command
+tailscale ssh boxhead@box-rex "nvidia-smi"
+```
+
+**Python Usage (DomoEnv):**
+```python
+from domo.domo_env import DomoEnv
+
+env = DomoEnv()
+
+# Check machine status
+status = env.get_tailscale_status()
+print(f"Online: {[m for m, s in status['machines'].items() if s['online']]}")
+
+# Run command on remote machine
+stdout, stderr, rc = env.ssh_run("box-rex", "nvidia-smi")
+print(stdout)
+
+# Interactive session
+env.ssh_connect("box-rig")
+```
+
+**Python Usage (TailscaleSSH directly):**
+```python
+from domo.ssh import TailscaleSSH
+
+ssh = TailscaleSSH()
+
+# Check status
+print(ssh.is_online("box-rex"))
+
+# Run command
+stdout, stderr, rc = ssh.run_command("box-rex", "hostname")
+
+# Test all connections
+results = ssh.test_all_connections()
+```
+
+**CLI Usage:**
+```bash
+# Show machine status
+python domo/domo_env.py ssh-status
+
+# SSH to machine (interactive)
+python domo/domo_env.py ssh box-rig
+
+# Run command on machine
+python domo/domo_env.py ssh box-rex "dir C:\\"
+
+# Test connections
+python domo/domo_env.py ssh-test
+python domo/domo_env.py ssh-test box-rig
+```
+
+**Pre-requisites:** Enable Tailscale SSH on each target machine:
+```powershell
+# Windows (admin PowerShell)
+tailscale set --ssh
+
+# macOS/Linux
+sudo tailscale set --ssh
+```
+
 ## Testing
 
 ### Automated Test Suite
