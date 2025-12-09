@@ -73,12 +73,19 @@ All hooks are Python scripts that read JSON from stdin and write to SQLite, with
 - `TRIGGERED_SUBAGENT`: Links Task tool call to SubagentSession it spawned
 - `PART_OF_SUBAGENT`: Links subagent tool calls to their SubagentSession
 
-### SQLite Schema (v5)
+### SQLite Schema (v7)
 
-Key columns in `events` table for subagent tracking:
-- `parent_session_id`: Links subagent events to parent session
-- `agent_id`: The subagent's session ID
-- `is_subagent_event`: Boolean flag (1 for subagent tool calls)
+**events table** - All hook events:
+- Core: `session_id`, `event_type`, `timestamp`, `raw_json`
+- Tool data: `tool_name`, `tool_use_id`, `file_path`, `command`, `pattern`, `url`
+- File tracking: `file_paths_json`, `access_mode`, `project_root`, `glob_match_count`
+- Subagent: `parent_session_id`, `agent_id`, `is_subagent_event`
+- Metrics: `duration_ms`, `output_size_bytes`, `has_stderr`, `sequence_index`
+
+**file_access_log table** - Detailed file access tracking:
+- `session_id`, `file_path`, `normalized_path`, `access_mode`
+- `project_root`, `tool_name`, `line_numbers_json`
+- `is_primary_target`, `is_glob_expansion`, `synced_to_neo4j`
 
 ### Error Handling Philosophy
 
@@ -114,7 +121,96 @@ export NEO4J_DATABASE=claude_hooks
 
 Hooks are registered in `.claude/settings.local.json` and execute Python scripts via command hooks. The configuration also includes permission settings for allowed Bash commands and WebFetch domains.
 
+### NAS Access (SSH)
+
+Claude Code has direct SSH access to the Terramaster NAS via key-based authentication.
+
+**Connection Details:**
+- **Alias:** `terramaster` (preferred - no credentials needed)
+- **Host:** `192.168.1.20` (BOX-NAS)
+- **User:** `boxhead`
+- **Key:** `~/.ssh/id_terramaster`
+
+**Usage Examples:**
+```bash
+# Run a command on the NAS (use alias - no password needed)
+ssh terramaster "ls -la /srv/media"
+
+# Check Docker containers
+ssh terramaster "docker ps"
+
+# View NAS storage
+ssh terramaster "df -h"
+
+# Transfer files TO the NAS
+scp local-file.txt terramaster:/srv/projects/
+
+# Transfer files FROM the NAS
+scp terramaster:/srv/projects/file.txt ./
+```
+
+**NAS Storage Paths:**
+- `/srv/media` - Movies, TV, music
+- `/srv/projects` - Development projects
+- `/srv/backups` - Backup storage
+- `/srv/robotics` - Rover telemetry, datasets
+
+**Docker Services on NAS:**
+- Neo4j (7687), Jellyfin (8096), Home Assistant (8123)
+- Sonarr (8989), Radarr (7878), qBittorrent (8080)
+- Code-Server (8443), Immich (2283)
+
 ## Testing
+
+### Automated Test Suite
+
+The hooks system has a comprehensive pytest-based test suite with 224 tests covering:
+
+- **Unit tests**: File path extraction, data models, helper functions
+- **Integration tests**: SQLite reader/writer, Neo4j operations (mocked)
+- **End-to-end tests**: Complete hook stdin processing, session flows
+
+**Run the full test suite:**
+```bash
+cd .claude/hooks
+python -m pytest tests/ -v
+```
+
+**Run specific test categories:**
+```bash
+# Unit tests only
+python -m pytest tests/ -v -m unit
+
+# Integration tests only
+python -m pytest tests/ -v -m integration
+
+# End-to-end tests only
+python -m pytest tests/ -v -m e2e
+```
+
+**Test file structure:**
+```
+.claude/hooks/tests/
+├── conftest.py           # Shared fixtures (temp DB, mocks)
+├── test_helpers.py       # Unit tests for core/helpers.py extraction functions
+├── test_models.py        # Data model validation tests
+├── test_sqlite_writer.py # SQLite schema and write operation tests
+├── test_sqlite_reader.py # SQLite query method tests
+├── test_neo4j_writer.py  # Neo4j operations (mocked)
+├── test_sync.py          # SQLite→Neo4j sync orchestration tests
+└── test_integration.py   # End-to-end hook processing tests
+```
+
+**Key fixtures (conftest.py):**
+- `temp_sqlite_db`: Temporary SQLite database with v7 schema
+- `sqlite_writer`: Writer instance connected to temp database
+- `sqlite_reader`: Reader instance connected to temp database
+- `populated_file_access_db`: Database with sample file access records
+- `mock_neo4j_driver`: Mocked Neo4j driver for testing graph operations
+- `sample_file_path_result`: Sample FilePathResult for testing
+- `sample_tool_event`: Sample CLIToolResultEvent for testing
+
+### Manual Hook Testing
 
 Test individual hooks directly:
 

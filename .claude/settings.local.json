@@ -13,8 +13,13 @@
       "Bash(git checkout:*)",
       "Bash(findstr:*)",
       "Bash(tree:*)",
+      "Bash(ssh terramaster:*)",
+      "Bash(ssh boxhead@192.168.1.20:*)",
+      "Bash(scp:*)",
       "mcp__neo4j__get_neo4j_schema",
-      "mcp__neo4j__read_neo4j_cypher"
+      "mcp__neo4j__read_neo4j_cypher",
+      "mcp__neo4j__write_neo4j_cypher",
+      "Bash(oh-my-posh font install:*)"
     ],
     "deny": [],
     "ask": []
